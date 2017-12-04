@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import random
+import math
 from sklearn.metrics import accuracy_score
 import scipy.io.wavfile
 from classifiers.basicMFCC.feature import audio2feature
@@ -11,14 +12,15 @@ class Simulator:
 
     def __init__(self):
         # parameters
-        self.enough_accuracy = 0.85  # if it achieves this accuracy, the episode ends
+        self.enough_accuracy = 0.9  # if it achieves this accuracy, the episode ends
         # when number of samples is more than the #person*this number, then end of episode
-        self.max_sample_per_person = 14
-        self.accuracy_reward_coef = 70  # how much reward it get when as accuracy improves
+        self.max_sample_per_person = 40
+        self.accuracy_reward_coef = 60  # how much reward it get when as accuracy improves
         self.word_penalty = 2.0  # penalty for each new word
-        self.goal_reward = 50 # reward for reaching the given accuracy
+        self.goal_reward = 20 # reward for reaching the given accuracy
         # END parameters
         self.model = CustomClassifier()
+        self.learning_curve=[]
         self.__loadData()
         self.reset()
 
@@ -29,7 +31,7 @@ class Simulator:
         for directory in users:
             self.data.append([])
             words = [f for f in os.listdir(
-                os.path.join(path, directory)) if not f[0] == '.'][:1]   #TODO: remove.. csak 1 szót engedek
+                os.path.join(path, directory)) if not f[0] == '.'][:5]   #TODO: remove.. csak 1 szót engedek
             self.nb_word = len(words)
             for subdirectory in words:
                 self.data[-1].append([])
@@ -46,8 +48,10 @@ class Simulator:
         self.train_Y = []
         self.used = set()
         self.history = [1.0/self.nb_users]
+        self.count_items=np.zeros((self.nb_users,self.nb_word))
+        self.learning_curve.append(0)
         #return first observation
-        return np.zeros((self.nb_users,self.nb_word))
+        return np.zeros((2,self.nb_users,self.nb_word))
 
     # action: tuple-->(user_id, word_id)
     def step(self, action):
@@ -100,7 +104,14 @@ class Simulator:
             done=True
         else:
             done=False
-        observation=np.array(observation)
+
+        #account word number: squeeze between 0 and 1 with tanh
+        self.count_items[action[0], action[1]] = self.count_items[action[0], action[1]] + 1.0/self.nb_samples
+
+        observation=np.array(observation).reshape((1,self.nb_users,self.nb_word))
+        observation= np.concatenate((observation,self.count_items.reshape((1,self.nb_users,self.nb_word))),axis=0)
+        #save reward:
+        self.learning_curve[-1] = reward
         return observation, reward, done
 
     def action_space(self):  # tuple of available actions
@@ -123,3 +134,16 @@ class Simulator:
             return sum / (len(self.history))
         else:
             return sum / min(length, len(self.history))
+
+
+    def augment_state(self,observation):
+        #TODO
+        #generate order numbers
+        nr=[x for x in range(self.nb_users)]
+        nr=np.array(nr)
+        observation=np.append(observation,nr,axis=0)
+        np.random.shuffle(observation)
+        order = observation[-1,:]
+        observation=observation[:-1,:]
+        return observation, order
+

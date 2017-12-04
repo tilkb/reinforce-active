@@ -10,6 +10,8 @@ from simulator import Simulator
 from reinforcement.core import ReplayMemory
 from reinforcement.core import Transition
 from reinforcement.core import ActionPicker
+import matplotlib.pyplot as plt
+import numpy as np
 
 BATCH_SIZE = 128
 GAMMA = 0.999
@@ -25,7 +27,7 @@ Tensor = FloatTensor
 
 environment=Simulator()
 memory = ReplayMemory(10000)
-actionpicker = ActionPicker()
+actionpicker = ActionPicker(environment.nb_users*environment.nb_word)
 
 
 class DQN(nn.Module):
@@ -34,18 +36,15 @@ class DQN(nn.Module):
         super(DQN, self).__init__()
         space = environment.action_space()[0] * environment.action_space()[1]
         
-        self.layer1 = nn.Linear(space, space * 4)
-        self.bn1 = nn.BatchNorm1d(space * 4)
-        self.layer2 = nn.Linear(space * 4, space * 2)
-        self.bn2 = nn.BatchNorm1d(space * 2)
-        self.layer3 = nn.Linear(space * 2, space)
+        self.layer1 = nn.Linear(space*2, space)
+        #self.layer2 = nn.Linear(space * 2, space)
+        #self.bn2 = nn.BatchNorm1d(space * 2)
 
         
     def forward(self, x):
-        sigm=torch.nn.Sigmoid()
-        x = sigm(self.bn1(self.layer1(x)))
-        x = sigm(self.bn2(self.layer2(x)))
-        x = self.layer3(x)
+        #sigm=torch.nn.Sigmoid()
+        #x = sigm(self.layer1(x))
+        x=self.layer1(x)
         return x
 
 
@@ -106,28 +105,27 @@ for i_episode in range(num_episodes):
     print(i_episode)
     # Initialize the environment and state
     state = environment.reset()
-    state = Tensor(state.reshape(1,environment.nb_users*environment.nb_word))
+    state = Tensor(state.reshape(1,2*environment.nb_users*environment.nb_word))
         
     for t in count():
         # Select and perform an action
-        if actionpicker.select_action():
+        if True: #actionpicker.eps_decay():
             #Pick by the model
-            action = model(
-            Variable(state, volatile=True).type(FloatTensor)).data.max(1)[1].view(1, 1)
+            bonus = actionpicker.ucb_bonus()
+            temp = model(Variable(state, volatile=True).type(FloatTensor)).data
+            action= (temp + FloatTensor(bonus)).max(1)[1].view(1, 1)
             
             #convert to tuples
             action=int(action.numpy()[0])
+            actionpicker.ucb_action(action)
             action = (action//environment.nb_word,action % environment.nb_word)
         else:
             #Pick by random
             action=environment.uniform_sample()
 
-        print(action)
-        print(model(
-            Variable(state, volatile=True).type(FloatTensor)).data)
         next_state, reward, done= environment.step(action)
-        next_state = Tensor(next_state.reshape(1,environment.nb_users*environment.nb_word))
-        print(reward)
+        next_state = Tensor(next_state.reshape(1,2*environment.nb_users*environment.nb_word))
+        #print(reward)
         reward = Tensor([reward])
         actiondo=LongTensor([action[0]*environment.nb_word+action[1]])
 
@@ -137,10 +135,48 @@ for i_episode in range(num_episodes):
 
         # Move to the next state
         state = next_state
-
+        print(state)
+        print(model(
+            Variable(state, volatile=True).type(FloatTensor)).data)
         # Perform one step of the optimization (on the target network)
         optimize_model()
         if done:
             break
 
 print('Complete')
+#try out the policy
+
+l_curve=environment.learning_curve
+
+state = environment.reset()
+state = Tensor(state.reshape(1,2*environment.nb_users*environment.nb_word))
+for t in count():
+    print(state)
+    action = model(
+            Variable(state, volatile=True).type(FloatTensor)).data.max(1)[1].view(1, 1)
+    action=int(action.numpy()[0])
+    action = (action//environment.nb_word,action % environment.nb_word)
+    print(model(
+            Variable(state, volatile=True).type(FloatTensor)).data)
+    next_state, reward, done= environment.step(action)
+    state = Tensor(next_state.reshape(1,2*environment.nb_users*environment.nb_word))
+    if done:
+        break
+
+result=environment.gethistory()
+
+#random agent
+environment.reset()
+for t in count():
+    next_state, reward, done = environment.step(environment.uniform_sample())
+    if done:
+        break
+randomresult=environment.gethistory()
+#plot: random: blue, policy red
+plt.plot(randomresult)
+plt.plot(result,'r-')
+plt.show()
+
+plt.plot(l_curve)
+plt.show()
+
