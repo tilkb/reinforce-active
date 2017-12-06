@@ -71,5 +71,4 @@ class ActionPicker(object):
     #return the bonus for the actions
     def ucb_bonus(self):
         bonus = np.sqrt(2*math.log(self.time)/self.used_actions)
-        print('..',bonus)
         return bonus

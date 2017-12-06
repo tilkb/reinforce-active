@@ -12,7 +12,7 @@ class Simulator:
 
     def __init__(self):
         # parameters
-        self.enough_accuracy = 0.9  # if it achieves this accuracy, the episode ends
+        self.enough_accuracy = 0.8  # if it achieves this accuracy, the episode ends
         # when number of samples is more than the #person*this number, then end of episode
         self.max_sample_per_person = 40
         self.accuracy_reward_coef = 60  # how much reward it get when as accuracy improves
@@ -31,7 +31,7 @@ class Simulator:
         for directory in users:
             self.data.append([])
             words = [f for f in os.listdir(
-                os.path.join(path, directory)) if not f[0] == '.'][:5]   #TODO: remove.. csak 1 szót engedek
+                os.path.join(path, directory)) if not f[0] == '.'][:1]   #TODO: remove.. csak 1 szót engedek
             self.nb_word = len(words)
             for subdirectory in words:
                 self.data[-1].append([])

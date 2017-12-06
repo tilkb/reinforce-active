@@ -12,6 +12,7 @@ from reinforcement.core import Transition
 from reinforcement.core import ActionPicker
 import matplotlib.pyplot as plt
 import numpy as np
+from reinforcement.metrics import Metrics
 
 BATCH_SIZE = 128
 GAMMA = 0.999
@@ -26,7 +27,7 @@ Tensor = FloatTensor
 
 
 environment=Simulator()
-memory = ReplayMemory(10000)
+memory = ReplayMemory(1000)
 actionpicker = ActionPicker(environment.nb_users*environment.nb_word)
 
 
@@ -100,7 +101,7 @@ def optimize_model():
         param.grad.data.clamp_(-1, 1)
     optimizer.step()
 
-num_episodes = 1000
+num_episodes = 300
 for i_episode in range(num_episodes):
     print(i_episode)
     # Initialize the environment and state
@@ -135,9 +136,6 @@ for i_episode in range(num_episodes):
 
         # Move to the next state
         state = next_state
-        print(state)
-        print(model(
-            Variable(state, volatile=True).type(FloatTensor)).data)
         # Perform one step of the optimization (on the target network)
         optimize_model()
         if done:
@@ -147,36 +145,22 @@ print('Complete')
 #try out the policy
 
 l_curve=environment.learning_curve
+plt.plot(l_curve)
+plt.show()
 
-state = environment.reset()
-state = Tensor(state.reshape(1,2*environment.nb_users*environment.nb_word))
-for t in count():
-    print(state)
+def DQN_policy(state):
     action = model(
             Variable(state, volatile=True).type(FloatTensor)).data.max(1)[1].view(1, 1)
     action=int(action.numpy()[0])
     action = (action//environment.nb_word,action % environment.nb_word)
-    print(model(
-            Variable(state, volatile=True).type(FloatTensor)).data)
-    next_state, reward, done= environment.step(action)
-    state = Tensor(next_state.reshape(1,2*environment.nb_users*environment.nb_word))
-    if done:
-        break
+    return action
 
-result=environment.gethistory()
+metrics = Metrics(environment)
+inc = metrics.compare_policy([("DQN",DQN_policy)],10)
 
-#random agent
-environment.reset()
-for t in count():
-    next_state, reward, done = environment.step(environment.uniform_sample())
-    if done:
-        break
-randomresult=environment.gethistory()
-#plot: random: blue, policy red
-plt.plot(randomresult)
-plt.plot(result,'r-')
-plt.show()
+print(inc)
 
-plt.plot(l_curve)
-plt.show()
+
+
+
 
