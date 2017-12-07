@@ -8,6 +8,7 @@ import torch.optim as optim
 import matplotlib.pyplot as plt
 from reinforcement.metrics import Metrics
 import numpy as np
+from torch.distributions import Categorical
 
 
 GAMMA = 0.995
@@ -48,28 +49,15 @@ if use_cuda:
 optimizer = optim.Adam(policy_network.parameters())
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def select_action(state):
-    state = torch.from_numpy(state).float().unsqueeze(0)
-    probs = policy(Variable(state))
-    m = torch.distributions.Categorical(probs)
+    state = torch.from_numpy(state).float()
+    probs = policy_network(Variable(state))
+    m = Categorical(probs)
     action = m.sample()
     policy_network.saved_log_probs.append(m.log_prob(action))
-    return action.data[0]
+    action2 = int(action.cpu().data.numpy()[0])
+    action2 = (action2//environment.nb_word,action2 % environment.nb_word)
+    return action2
 
 
 
@@ -99,11 +87,6 @@ def finish_episode():
 
 
 
-
-
-
-
-
 num_episodes = 10000
 for i_episode in range(num_episodes):
     print(i_episode)
@@ -113,10 +96,8 @@ for i_episode in range(num_episodes):
     for t in count():
         action = select_action(state)
 
-        action2 = int(action.cpu().data.numpy()[0])
-        action2 = (action2//environment.nb_word,action2 % environment.nb_word)
-        next_state, reward, done= environment.step(action2)
-        next_state = Tensor(next_state.reshape(1,2 * environment.nb_users * environment.nb_word))
+        next_state, reward, done= environment.step(action)
+        state = next_state.reshape(1,2 * environment.nb_users * environment.nb_word)
         
         policy_network.rewards.append(reward)
         if done:
@@ -126,13 +107,12 @@ for i_episode in range(num_episodes):
     
 
 l_curve=environment.learning_curve
-#plt.plot(l_curve)
-#plt.show()
+plt.plot(l_curve)
+plt.show()
 
 def policy(state):
     probs = policy_network(
             Variable(state, volatile=True).type(FloatTensor))
-    print(probs)
 
     m = torch.distributions.Categorical(probs)
     action = m.sample()
@@ -141,7 +121,7 @@ def policy(state):
     return action
 
 metrics = Metrics(environment)
-inc = metrics.compare_policy([("PolicyGradient",policy)],10,False)
+inc = metrics.compare_policy([("PolicyGradient",policy)],10,True)
 
 print(inc)
 
