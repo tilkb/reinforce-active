@@ -7,6 +7,29 @@ import scipy.io.wavfile
 from classifiers.basicMFCC.feature import audio2feature
 from classifiers.basicMFCC.classifier import CustomClassifier
 
+from concurrent.futures import ProcessPoolExecutor
+
+class ParalellSyncronSimulator:
+    def __init__(self, simulator_num):
+        self.pool = ProcessPoolExecutor(max_workers=simulator_num)
+        self.simulators = []
+        for i in range(simulator_num):
+            self.simulators.append(Simulator())
+    def step(self,actions):
+        futures = []
+        for i in range(len(actions)):
+            futures.append(self.pool.submit(simulators[i].step,actions[i]))
+        result =[]
+        for i in range(len(actions)):
+            result.append(futures[i].result())
+        return result    
+    
+    def reset(self,):
+        for i in range(len(self.simulators)):
+            self.simulators[i].reset()
+
+
+
 
 class Simulator:
 
@@ -14,7 +37,7 @@ class Simulator:
         # parameters
         self.enough_accuracy = 0.8  # if it achieves this accuracy, the episode ends
         # when number of samples is more than the #person*this number, then end of episode
-        self.max_sample_per_person = 40
+        self.max_sample_per_person = 24
         self.accuracy_reward_coef = 60  # how much reward it get when as accuracy improves
         self.word_penalty = 2.0  # penalty for each new word
         self.goal_reward = 20 # reward for reaching the given accuracy

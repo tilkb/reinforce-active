@@ -14,8 +14,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from reinforcement.metrics import Metrics
 
-BATCH_SIZE = 128
-GAMMA = 0.999
+BATCH_SIZE = 256
+GAMMA = 0.995
 
 
 # if gpu is to be used
@@ -27,7 +27,7 @@ Tensor = FloatTensor
 
 
 environment=Simulator()
-memory = ReplayMemory(1000)
+memory = ReplayMemory(10000)
 actionpicker = ActionPicker(environment.nb_users*environment.nb_word)
 
 
@@ -38,7 +38,7 @@ class DQN(nn.Module):
         space = environment.action_space()[0] * environment.action_space()[1]
         
         self.layer1 = nn.Linear(space*2, space)
-        #self.layer2 = nn.Linear(space * 2, space)
+        #self.layer2 = nn.Linear(space, space)
         #self.bn2 = nn.BatchNorm1d(space * 2)
 
         
@@ -50,6 +50,8 @@ class DQN(nn.Module):
 
 
 model = DQN()
+if use_cuda:
+    model.cuda()
 optimizer = optim.RMSprop(model.parameters())
 
 
@@ -101,7 +103,7 @@ def optimize_model():
         param.grad.data.clamp_(-1, 1)
     optimizer.step()
 
-num_episodes = 300
+num_episodes = 1000
 for i_episode in range(num_episodes):
     print(i_episode)
     # Initialize the environment and state
@@ -117,7 +119,7 @@ for i_episode in range(num_episodes):
             action= (temp + FloatTensor(bonus)).max(1)[1].view(1, 1)
             
             #convert to tuples
-            action=int(action.numpy()[0])
+            action=int(action.cpu().numpy()[0])
             actionpicker.ucb_action(action)
             action = (action//environment.nb_word,action % environment.nb_word)
         else:
@@ -126,7 +128,6 @@ for i_episode in range(num_episodes):
 
         next_state, reward, done= environment.step(action)
         next_state = Tensor(next_state.reshape(1,2*environment.nb_users*environment.nb_word))
-        #print(reward)
         reward = Tensor([reward])
         actiondo=LongTensor([action[0]*environment.nb_word+action[1]])
 
@@ -144,19 +145,21 @@ for i_episode in range(num_episodes):
 print('Complete')
 #try out the policy
 
-l_curve=environment.learning_curve
-plt.plot(l_curve)
-plt.show()
+#l_curve=environment.learning_curve
+#plt.plot(l_curve)
+#plt.show()
 
 def DQN_policy(state):
     action = model(
             Variable(state, volatile=True).type(FloatTensor)).data.max(1)[1].view(1, 1)
-    action=int(action.numpy()[0])
+    action=int(action.cpu().numpy()[0])
     action = (action//environment.nb_word,action % environment.nb_word)
     return action
 
+
+
 metrics = Metrics(environment)
-inc = metrics.compare_policy([("DQN",DQN_policy)],10)
+inc = metrics.compare_policy([("DQN",DQN_policy)],20,False)
 
 print(inc)
 
