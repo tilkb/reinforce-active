@@ -9,9 +9,12 @@ import matplotlib.pyplot as plt
 from reinforcement.metrics import Metrics
 import numpy as np
 from torch.distributions import Categorical
+import pickle
+import copy
 
 
-GAMMA = 0.995
+
+GAMMA = 0.98
 
 # if gpu is to be used
 use_cuda = torch.cuda.is_available()
@@ -29,7 +32,8 @@ class PolicyNetwork(nn.Module):
     def __init__(self):
         super(PolicyNetwork, self).__init__()
         space = environment.action_space()[0] * environment.action_space()[1]
-        self.smax= nn.Softmax()    
+        self.smax= nn.Softmax()  
+        self.layer1 = nn.Linear(space * 2, space * 2)  
         self.layer2 = nn.Linear(space * 2, space)
 
         self.saved_log_probs = []
@@ -80,39 +84,9 @@ def finish_episode():
     del policy_network.saved_log_probs[:]
 
 
-
-
-
-
-
-
-
-num_episodes = 10000
-for i_episode in range(num_episodes):
-    print(i_episode)
-    # Initialize the environment and state
-    state = environment.reset() 
-    state = state.reshape(1,2*environment.nb_users*environment.nb_word) 
-    for t in count():
-        action = select_action(state)
-
-        next_state, reward, done= environment.step(action)
-        state = next_state.reshape(1,2 * environment.nb_users * environment.nb_word)
-        
-        policy_network.rewards.append(reward)
-        if done:
-            break
- 
-    finish_episode()
-    
-
-l_curve=environment.learning_curve
-plt.plot(l_curve)
-plt.show()
-
 def policy(state):
     probs = policy_network(
-            Variable(state, volatile=True).type(FloatTensor))
+        Variable(state, volatile=True).type(FloatTensor))
 
     m = torch.distributions.Categorical(probs)
     action = m.sample()
@@ -120,8 +94,46 @@ def policy(state):
     action = (action//environment.nb_word,action % environment.nb_word)
     return action
 
-metrics = Metrics(environment)
-inc = metrics.compare_policy([("PolicyGradient",policy)],10,True)
+def main():
+    num_episodes = 20000
+    for i_episode in range(num_episodes):
+        print(i_episode)
+        # Initialize the environment and state
+        state = environment.reset() 
+        state = state.reshape(1,2*environment.nb_users*environment.nb_word) 
+        for t in count():
+            action = select_action(state)
 
-print(inc)
+            next_state, reward, done= environment.step(action)
+            state = next_state.reshape(1,2 * environment.nb_users * environment.nb_word)
+        
+            policy_network.rewards.append(reward)
+            if done:
+                break
+ 
+        finish_episode()
+    
+
+    l_curve=environment.learning_curve
+    #smooth
+    #l_curve= np.convolve(l_curve,0.01*np.ones(100))
+    #plt.plot(l_curve)
+    #plt.show()
+
+
+
+
+
+    metrics = Metrics(environment)
+
+    torch.save(policy_network,"saved_policy/REINFORCE.pkl")
+
+    inc = metrics.compare_policy([("PolicyGradient",policy)], 20, False)
+
+    print(inc)
+
+if __name__ == "__main__":
+    main()
+
+
 

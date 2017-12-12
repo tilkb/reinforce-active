@@ -10,6 +10,7 @@ from classifiers.basicMFCC.classifier import CustomClassifier
 from concurrent.futures import ProcessPoolExecutor
 
 class ParalellSyncronSimulator:
+    #TODO:test
     def __init__(self, simulator_num):
         self.pool = ProcessPoolExecutor(max_workers=simulator_num)
         self.simulators = []
@@ -24,16 +25,20 @@ class ParalellSyncronSimulator:
             result.append(futures[i].result())
         return result    
     
-    def reset(self,):
+    def reset(self):
+        result =[]
         for i in range(len(self.simulators)):
-            self.simulators[i].reset()
+            result.append(self.simulators[i].reset())
+        return result
 
 
 
 
 class Simulator:
 
-    def __init__(self):
+    def __init__(self, real_simulation = False):
+        #if it is true= state is determenid using only used datapoints
+        self.real_simulation = real_simulation #TODO: do the step modifications
         # parameters
         self.enough_accuracy = 0.8  # if it achieves this accuracy, the episode ends
         # when number of samples is more than the #person*this number, then end of episode
@@ -54,7 +59,7 @@ class Simulator:
         for directory in users:
             self.data.append([])
             words = [f for f in os.listdir(
-                os.path.join(path, directory)) if not f[0] == '.'][:1]   #TODO: remove.. csak 1 szót engedek
+                os.path.join(path, directory)) if not f[0] == '.'][:2]   #TODO: remove.. csak 1 szót engedek
             self.nb_word = len(words)
             for subdirectory in words:
                 self.data[-1].append([])

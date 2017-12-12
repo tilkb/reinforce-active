@@ -7,6 +7,7 @@ import math
 import torch.optim as optim
 from itertools import count
 from simulator import Simulator
+from simulator import ParalellSyncronSimulator
 from reinforcement.core import ReplayMemory
 from reinforcement.core import Transition
 from reinforcement.core import ActionPicker
@@ -14,8 +15,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from reinforcement.metrics import Metrics
 
-BATCH_SIZE = 256
-GAMMA = 0.995
+paralell_simulator = 1
+BATCH_SIZE = 128
+GAMMA = 0.9
 
 
 # if gpu is to be used
@@ -25,7 +27,7 @@ LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
 ByteTensor = torch.cuda.ByteTensor if use_cuda else torch.ByteTensor
 Tensor = FloatTensor
 
-
+par_environment = ParalellSyncronSimulator(paralell_simulator)
 environment=Simulator()
 memory = ReplayMemory(10000)
 actionpicker = ActionPicker(environment.nb_users*environment.nb_word)
@@ -103,51 +105,58 @@ def optimize_model():
         param.grad.data.clamp_(-1, 1)
     optimizer.step()
 
-num_episodes = 1000
-for i_episode in range(num_episodes):
-    print(i_episode)
-    # Initialize the environment and state
-    state = environment.reset()
-    state = Tensor(state.reshape(1,2*environment.nb_users*environment.nb_word))
+
+def main():
+    num_episodes = 3000
+    for i_episode in range(num_episodes):
+        print(i_episode)
+        # Initialize the environment and state
+        state = environment.reset()
+        state = Tensor(state.reshape(1,2*environment.nb_users*environment.nb_word))
         
-    for t in count():
-        # Select and perform an action
-        if True: #actionpicker.eps_decay():
-            #Pick by the model
-            bonus = actionpicker.ucb_bonus()
-            temp = model(Variable(state, volatile=True).type(FloatTensor)).data
-            action= (temp + FloatTensor(bonus)).max(1)[1].view(1, 1)
+        for t in count():
+            # Select and perform an action
+            if True: #actionpicker.eps_decay():
+                #Pick by the model
+                bonus = actionpicker.ucb_bonus()
+                temp = model(Variable(state, volatile=True).type(FloatTensor)).data
+                action= (temp + FloatTensor(bonus)).max(1)[1].view(1, 1)
             
-            #convert to tuples
-            action=int(action.cpu().numpy()[0])
-            actionpicker.ucb_action(action)
-            action = (action//environment.nb_word,action % environment.nb_word)
-        else:
-            #Pick by random
-            action=environment.uniform_sample()
+                #convert to tuples
+                action=int(action.cpu().numpy()[0])
+                actionpicker.ucb_action(action)
+                action = (action//environment.nb_word,action % environment.nb_word)
+            else:
+                #Pick by random
+                action=environment.uniform_sample()
 
-        next_state, reward, done= environment.step(action)
-        next_state = Tensor(next_state.reshape(1,2*environment.nb_users*environment.nb_word))
-        reward = Tensor([reward])
-        actiondo=LongTensor([action[0]*environment.nb_word+action[1]])
+            next_state, reward, done= environment.step(action)
+            next_state = Tensor(next_state.reshape(1,2*environment.nb_users*environment.nb_word))
+            reward = Tensor([reward])
+            actiondo=LongTensor([action[0]*environment.nb_word+action[1]])
 
 
-        # Store the transition in memory
-        memory.push(state, actiondo, next_state, reward)
+            # Store the transition in memory
+            memory.push(state, actiondo, next_state, reward)
 
-        # Move to the next state
-        state = next_state
-        # Perform one step of the optimization (on the target network)
-        optimize_model()
-        if done:
-            break
+            # Move to the next state
+            state = next_state
+            # Perform one step of the optimization (on the target network)
+            optimize_model()
+            if done:
+                break
 
-print('Complete')
-#try out the policy
+    print('Complete')
+    #try out the policy
 
-#l_curve=environment.learning_curve
-#plt.plot(l_curve)
-#plt.show()
+    #l_curve=environment.learning_curve
+    #plt.plot(l_curve)
+    #plt.show()
+
+    metrics = Metrics(environment)
+    inc = metrics.compare_policy([("DQN",DQN_policy)],20,False)
+    torch.save(model,"saved_policy/DQN.pkl")
+    print(inc)
 
 def DQN_policy(state):
     action = model(
@@ -158,12 +167,10 @@ def DQN_policy(state):
 
 
 
-metrics = Metrics(environment)
-inc = metrics.compare_policy([("DQN",DQN_policy)],20,False)
-
-print(inc)
 
 
+if __name__ == "__main__":
+    main()
 
 
 
