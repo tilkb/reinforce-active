@@ -1,4 +1,8 @@
-###TODO
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 # if gpu is to be used
 use_cuda = torch.cuda.is_available()
@@ -17,4 +21,5 @@ class ActorCritic(torch.nn.Module):
         self.layer1 = nn.Linear(space * 2, space)
     
     def forward (self, input):
-        None
+        x=self.layer1(input)
+        return x

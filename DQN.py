@@ -83,6 +83,7 @@ def optimize_model():
 
     # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
     # columns of actions taken
+
     state_action_values = model(state_batch)
     state_action_values = state_action_values.gather(1, action_batch.view(-1,1))
     # Compute V(s_{t+1}) for all next states.
@@ -111,39 +112,42 @@ def main():
     for i_episode in range(num_episodes):
         print(i_episode)
         # Initialize the environment and state
-        state = environment.reset()
-        state = Tensor(state.reshape(1,2*environment.nb_users*environment.nb_word))
+
+        state = np.array(par_environment.reset())
+        state = Tensor(state.reshape(paralell_simulator,2*environment.nb_users*environment.nb_word))
+
         
         for t in count():
             # Select and perform an action
             if True: #actionpicker.eps_decay():
                 #Pick by the model
-                bonus = actionpicker.ucb_bonus()
+                bonus = np.repeat(actionpicker.ucb_bonus(),paralell_simulator,axis=0).reshape((paralell_simulator, environment.nb_users*environment.nb_word))
                 temp = model(Variable(state, volatile=True).type(FloatTensor)).data
-                action= (temp + FloatTensor(bonus)).max(1)[1].view(1, 1)
+                action= (temp + FloatTensor(bonus)).max(1)[1].view(paralell_simulator, 1)
             
                 #convert to tuples
-                action=int(action.cpu().numpy()[0])
-                actionpicker.ucb_action(action)
-                action = (action//environment.nb_word,action % environment.nb_word)
+                actionlist=[]
+                action=action.cpu().numpy()
+                for act in action:
+                    tmp_act = int(act)
+                    actionpicker.ucb_action(tmp_act)
+                    actionlist.append((tmp_act//environment.nb_word,tmp_act % environment.nb_word))
             else:
                 #Pick by random
                 action=environment.uniform_sample()
-
-            next_state, reward, done= environment.step(action)
-            next_state = Tensor(next_state.reshape(1,2*environment.nb_users*environment.nb_word))
-            reward = Tensor([reward])
-            actiondo=LongTensor([action[0]*environment.nb_word+action[1]])
-
-
-            # Store the transition in memory
-            memory.push(state, actiondo, next_state, reward)
+            next_state, reward, done = par_environment.step(actionlist)
+            next_state = Tensor(next_state.reshape(paralell_simulator,2*environment.nb_users*environment.nb_word))
+            
+            for idx, item in enumerate(actionlist):
+                actiondo=LongTensor([item[0]*environment.nb_word+item[1]])
+                # Store the transition in memory
+                memory.push(state[idx].view(1,-1), actiondo, next_state[idx].view(1,-1), Tensor([reward[idx]]))
 
             # Move to the next state
             state = next_state
             # Perform one step of the optimization (on the target network)
             optimize_model()
-            if done:
+            if all(done):
                 break
 
     print('Complete')

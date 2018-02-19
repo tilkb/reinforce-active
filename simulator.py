@@ -19,11 +19,15 @@ class ParalellSyncronSimulator:
     def step(self,actions):
         futures = []
         for i in range(len(actions)):
-            futures.append(self.pool.submit(simulators[i].step,actions[i]))
-        result =[]
+            futures.append(self.pool.submit(self.simulators[i].par_step,actions[i]))
+        result =[[],[],[]]
         for i in range(len(actions)):
-            result.append(futures[i].result())
-        return result    
+            sim, (next_state, reward, done) =futures[i].result()
+            self.simulators[i] = sim
+            result[0].append(next_state)
+            result[1].append(reward)
+            result[2].append(done)
+        return np.array(result[0]), np.array(result[1]), np.array(result[2])    
     
     def reset(self):
         result =[]
@@ -71,6 +75,10 @@ class Simulator:
                     rate,data =scipy.io.wavfile.read(os.path.join(path,directory,subdirectory,file))
                     self.data[-1][-1].append(audio2feature(data,rate))
 
+        #wrapper for paralell execution
+    def par_step(self,action):
+        return self, self.reset()
+
     def reset(self):
         self.train_X = []
         self.train_Y = []
@@ -81,6 +89,10 @@ class Simulator:
         #return first observation
         return np.zeros((2,self.nb_users,self.nb_word))
 
+    #wrapper for paralell execution
+    def par_step(self,action):
+        return self, self.step(action)
+       
     # action: tuple-->(user_id, word_id)
     def step(self, action):
         # generate sample and it in the dataset.
@@ -121,7 +133,7 @@ class Simulator:
         #accuracy calculation
         predicted = self.model.predict(full_temp_X)
         self.history.append(accuracy_score(full_temp_Y, predicted))
-
+        
         # REWARD calculation
         reward=-self.word_penalty + self.accuracy_reward_coef * \
            (self.history[-1] - self.history[-2])
