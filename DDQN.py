@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import random
-import pickle
 import math
 import torch.optim as optim
 from itertools import count
@@ -23,6 +22,7 @@ GAMMA = 0.9
 PRIORITY_REPLAY = False
 
 
+
 # if gpu is to be used
 use_cuda = torch.cuda.is_available()
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
@@ -33,9 +33,9 @@ Tensor = FloatTensor
 par_environment = ParalellSyncronSimulator(paralell_simulator)
 environment=Simulator()
 if PRIORITY_REPLAY:
-    memory = PriorityReplayMemory(10000, BATCH_SIZE, 1.5)
+    memory = PriorityReplayMemory(10000, BATCH_SIZE, 1.1)
 else:
-    memory = ReplayMemory(40000)
+    memory = ReplayMemory(10000)
 actionpicker = ActionPicker(environment.nb_users*environment.nb_word)
 
 
@@ -56,35 +56,22 @@ class DQN(nn.Module):
         x=self.layer1(x)
         return x
 
-
-model = DQN()
+model1 = DQN()
+model2 = DQN()
 if use_cuda:
-    model.cuda()
-optimizer = optim.RMSprop(model.parameters())
-
+    model1.cuda()
+    model2.cuda()
+optimizer1 = optim.RMSprop(model1.parameters())
+optimizer2 = optim.RMSprop(model2.parameters())
 
 
 def optimize_model():
     if PRIORITY_REPLAY:
-        batch, _, indices = memory.select(1.0)
-        if (batch == None or batch[0] == None):
-            return 
-
-        state_batch = Variable(torch.cat([trans[0] for trans in batch]))
-        action_batch = Variable(torch.cat([trans[1] for trans in batch]))
-        reward_batch = Variable(torch.cat([trans[3] for trans in batch]))
-
-        # Compute a mask of non-final states and concatenate the batch elements
-        non_final_mask = ByteTensor(tuple(map(lambda s: s is not None,
-                                          [trans[2] for trans in batch])))
-
-        # We don't want to backprop through the expected action values and volatile
-        # will save us on temporarily changing the model parameters'
-        # requires_grad to False!
-        non_final_next_states = Variable(torch.cat([s for s in [trans[2] for trans in batch]
-                                                if s is not None]),
-                                                 volatile=True)
-
+        batch = memory.select(1.0)
+        print(batch)
+        state_batch = Variable(torch.cat(batch.state))
+        action_batch = Variable(torch.cat(batch.action))
+        reward_batch = Variable(torch.cat(batch.reward))
     else:
         if len(memory) < BATCH_SIZE:
             return
@@ -111,11 +98,11 @@ def optimize_model():
     # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
     # columns of actions taken
 
-    state_action_values = model(state_batch)
+    state_action_values = model1(state_batch)
     state_action_values = state_action_values.gather(1, action_batch.view(-1,1))
     # Compute V(s_{t+1}) for all next states.
     next_state_values = Variable(torch.zeros(BATCH_SIZE).type(Tensor))
-    next_state_values[non_final_mask] = model(non_final_next_states).max(1)[0]
+    next_state_values[non_final_mask] = model2(non_final_next_states).max(1)[0]
     # Now, we don't want to mess up the loss with a volatile flag, so let's
     # clear it. After this, we'll just end up with a Variable that has
     # requires_grad=False
@@ -126,21 +113,21 @@ def optimize_model():
     # Compute Huber loss
     loss = F.smooth_l1_loss(state_action_values, expected_state_action_values)
 
-    new_priority = (state_action_values.data - expected_state_action_values.data) ** 2
-    new_priority = new_priority.numpy().tolist()[0]
-    if PRIORITY_REPLAY:
-        memory.priority_update(indices,new_priority)
-
     # Optimize the model
-    optimizer.zero_grad()
+    optimizer1.zero_grad()
     loss.backward()
-    for param in model.parameters():
+    for param in model1.parameters():
         param.grad.data.clamp_(-1, 1)
-    optimizer.step()
+    optimizer1.step()
 
 
 def main():
-    num_episodes = 2000
+    global model1
+    global model2
+    global optimizer1
+    global optimizer2
+
+    num_episodes = 3000
 
     for i_episode in range(num_episodes):
         print(i_episode)
@@ -155,7 +142,7 @@ def main():
             if True: #actionpicker.eps_decay():
                 #Pick by the model
                 bonus = np.repeat(actionpicker.ucb_bonus(),paralell_simulator,axis=0).reshape((paralell_simulator, environment.nb_users*environment.nb_word))
-                temp = model(Variable(state, volatile=True).type(FloatTensor)).data
+                temp = model1(Variable(state, volatile=True).type(FloatTensor)).data
                 action= (temp + FloatTensor(bonus)).max(1)[1].view(paralell_simulator, 1)
             
                 #convert to tuples
@@ -174,40 +161,31 @@ def main():
             for idx, item in enumerate(actionlist):
                 actiondo=LongTensor([item[0]*environment.nb_word+item[1]])
                 # Store the transition in memory
-                if PRIORITY_REPLAY == False:
-                    memory.push(state[idx].view(1,-1), actiondo, next_state[idx].view(1,-1), Tensor([reward[idx]]))
-                else:
-                    error = (((model(Variable(next_state[idx], volatile=True).type(FloatTensor)).data.max(0)[0] * GAMMA) + reward[idx]) - temp.max(1)[0]) ** 2
-                    error= error.numpy().tolist()[0]
-                    memory.add((state[idx].view(1,-1), actiondo, next_state[idx].view(1,-1), Tensor([reward[idx]])), error)
-
+                memory.push(state[idx].view(1,-1), actiondo, next_state[idx].view(1,-1), Tensor([reward[idx]]))
             # Move to the next state
             state = next_state
             # Perform one step of the optimization (on the target network)
             optimize_model()
             if all(done):
                 break
+        #swap models after every episode
+        optimizer1, optimizer2 = optimizer2, optimizer1
+        model1, model2 = model2, model1
 
     print('Complete')
     #try out the policy
 
     l_curve=environment.learning_curve
-    #plt.plot(l_curve)
-    #plt.show()
+    plt.plot(l_curve)
+    plt.show()
 
     metrics = Metrics(environment)
-    inc = metrics.compare_policy([("DQN",DQN_policy)],30,False)
-    torch.save(model,"saved_policy/DQN.pkl")
+    inc = metrics.compare_policy([("DDQN",DQN_policy)],30,False)
+    torch.save(model1,"saved_policy/DDQN.pkl")
     print(inc)
 
-    #save the matrix for debug
-    print(model.state_dict())
-    with open('debug.pkl','wb') as fout:
-        pickle.dump(model.state_dict(),fout)
-
-
 def DQN_policy(state):
-    action = model(
+    action = model1(
             Variable(state, volatile=True).type(FloatTensor)).data.max(1)[1].view(1, 1)
     action=int(action.cpu().numpy()[0])
     action = (action//environment.nb_word,action % environment.nb_word)

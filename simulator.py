@@ -63,7 +63,7 @@ class Simulator:
         for directory in users:
             self.data.append([])
             words = [f for f in os.listdir(
-                os.path.join(path, directory)) if not f[0] == '.'][:2]   #TODO: remove.. csak 1 szót engedek
+                os.path.join(path, directory)) if not f[0] == '.'][:8]   #TODO: remove.. csak 1 szót engedek
             self.nb_word = len(words)
             for subdirectory in words:
                 self.data[-1].append([])

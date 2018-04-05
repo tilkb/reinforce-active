@@ -95,7 +95,7 @@ def policy(state):
     return action
 
 def main():
-    num_episodes = 20000
+    num_episodes = 30000
     for i_episode in range(num_episodes):
         print(i_episode)
         # Initialize the environment and state
@@ -128,7 +128,7 @@ def main():
 
     torch.save(policy_network,"saved_policy/REINFORCE.pkl")
 
-    inc = metrics.compare_policy([("PolicyGradient",policy)], 20, False)
+    inc = metrics.compare_policy([("PolicyGradient",policy)], 50, False)
 
     print(inc)
 
