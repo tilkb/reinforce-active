@@ -9,8 +9,9 @@ import torch.optim as optim
 from torch.autograd import Variable
 from torch.distributions import Categorical
 from itertools import count
+from tqdm import tqdm
 
-GAMMA = 0.95
+GAMMA = 0.99
 environment=Simulator()
 
 
@@ -20,14 +21,17 @@ SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
 class ActorCritic(nn.Module):
     def __init__(self):
         super(ActorCritic,self).__init__()
+        hidden = 256
         space = environment.action_space()[0] * environment.action_space()[1]
-        self.action_head = nn.Linear(space*2, space)
-        self.value_head = nn.Linear(space*2, 1)
+        self.affine1 = nn.Linear(space*2, hidden)
+        self.action_head = nn.Linear(hidden, space)
+        self.value_head = nn.Linear(hidden, 1)
 
         self.saved_actions = []
         self.rewards = []
 
     def forward(self, x):
+        x= F.relu(self.affine1(x))
         action_scores = self.action_head(x)
         state_values = self.value_head(x)
         return F.softmax(action_scores, dim=-1), state_values
@@ -70,7 +74,7 @@ def finish_episode():
 
 
 def main():
-    for i_episode in range(500):
+    for i_episode in tqdm(range(1000)):
         state = environment.reset()
         for t in range(10000):  # Don't infinite loop while learning
             action = select_action(state)
@@ -79,7 +83,7 @@ def main():
             model.rewards.append(reward)
             if done:
                 break
-        print(i_episode)
+        #print(i_episode)
         finish_episode()
     
     metrics = Metrics(environment)
